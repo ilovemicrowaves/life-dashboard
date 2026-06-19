@@ -4,6 +4,7 @@
   import Agenda from './lib/Agenda.svelte'
   import LogField from './lib/LogField.svelte'
   import RecentLogs from './lib/RecentLogs.svelte'
+  import SpeakQR from './lib/SpeakQR.svelte'
 
   let config = null
   let agenda = null
@@ -92,9 +93,12 @@
     <span class="muted">
       {#if agenda && agenda.last_rebuild}Index bijgewerkt: {agenda.last_rebuild.replace('T', ' ').slice(0, 16)}{/if}
     </span>
-    <button class="ghost" on:click={rebuildIndex} disabled={rebuilding}>
-      {rebuilding ? 'Herbouwen…' : 'Index herbouwen'}
-    </button>
+    <div class="bottom-right">
+      <SpeakQR />
+      <button class="ghost" on:click={rebuildIndex} disabled={rebuilding}>
+        {rebuilding ? 'Herbouwen…' : 'Index herbouwen'}
+      </button>
+    </div>
   </footer>
 </div>
 
@@ -162,6 +166,11 @@
     padding-top: 16px;
     font-size: 0.85rem;
     flex-wrap: wrap;
+  }
+  .bottom-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
   }
   .ghost {
     min-height: 48px;

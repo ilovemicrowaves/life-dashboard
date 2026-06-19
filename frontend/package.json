@@ -12,5 +12,8 @@
     "@sveltejs/vite-plugin-svelte": "^3.1.2",
     "svelte": "^4.2.19",
     "vite": "^5.4.10"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
   }
 }

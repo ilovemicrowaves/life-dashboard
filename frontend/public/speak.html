@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Log — Life Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: #000;
+      color: #f4f4f5;
+      font-family: system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      gap: 24px;
+    }
+
+    .mic {
+      width: min(180px, 40vw);
+      height: min(180px, 40vw);
+      border-radius: 50%;
+      border: 3px solid #5ad1c9;
+      background: transparent;
+      color: #5ad1c9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .mic:active {
+      background: rgba(90,209,201,0.1);
+      transform: scale(0.96);
+    }
+    .mic.listening {
+      border-color: #ff6b6b;
+      color: #ff6b6b;
+      animation: pulse 1.5s ease-in-out infinite;
+      background: rgba(255,107,107,0.08);
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255,107,107,0.4); }
+      50%      { box-shadow: 0 0 0 24px rgba(255,107,107,0); }
+    }
+
+    .mic svg { width: 40%; height: 40%; }
+
+    .text {
+      width: 100%;
+      max-width: 420px;
+      min-height: 60px;
+      padding: 14px 18px;
+      background: #141414;
+      border: 1px solid #2c2c2e;
+      border-radius: 14px;
+      font-size: 1.05rem;
+      color: #f4f4f5;
+      text-align: center;
+      line-height: 1.5;
+      word-break: break-word;
+      transition: border-color 0.2s;
+    }
+    .text:focus { border-color: #5ad1c9; outline: none; }
+    .text:empty::before {
+      content: 'Jouw log verschijnt hier…';
+      color: #9b9ba1;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
+      width: 100%;
+      max-width: 420px;
+    }
+
+    select {
+      background: #141414;
+      border: 1px solid #2c2c2e;
+      border-radius: 999px;
+      padding: 12px 32px 12px 18px;
+      font-size: 1rem;
+      color: #f4f4f5;
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239b9ba1' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'%3E%3C/path%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+    }
+
+    .send {
+      flex: 1;
+      min-width: 120px;
+      padding: 14px 28px;
+      background: #5ad1c9;
+      color: #04201e;
+      font-weight: 700;
+      font-size: 1.1rem;
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .send:active { background: #2fb3aa; }
+    .send:disabled { opacity: 0.4; }
+
+    .done {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      color: #5ad1c9;
+      animation: fadeIn 0.2s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    .error {
+      color: #ffb454;
+      font-size: 0.9rem;
+      text-align: center;
+      max-width: 300px;
+    }
+  </style>
+</head>
+<body>
+
+  <button class="mic" id="mic" aria-label="Spreek in">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+      <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+      <line x1="12" y1="19" x2="12" y2="23"/>
+      <line x1="8" y1="23" x2="16" y2="23"/>
+    </svg>
+  </button>
+
+  <div class="text" id="text" contenteditable="false"></div>
+
+  <div class="row">
+    <select id="theme" aria-label="Thema"></select>
+    <button class="send" id="send" disabled>Voeg toe</button>
+  </div>
+
+  <div class="error" id="error"></div>
+
+<script>
+  const $ = (s) => document.querySelector(s)
+
+  const mic = $('#mic')
+  const textEl = $('#text')
+  const themeEl = $('#theme')
+  const sendBtn = $('#send')
+  const errorEl = $('#error')
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+  let recognition = null
+  let listening = false
+  let finalTranscript = ''
+  let themes = ['algemeen']
+  let defaultTheme = 'algemeen'
+
+  // --- Config laden ---
+  async function loadConfig() {
+    try {
+      const r = await fetch('/api/config')
+      const cfg = await r.json()
+      if (cfg.themes && cfg.themes.length) themes = cfg.themes
+      defaultTheme = cfg.defaultTheme || themes[0]
+      themeEl.innerHTML = themes.map(t => `<option value="${t}">#log/${t}</option>`).join('')
+      themeEl.value = defaultTheme
+    } catch (_) {}
+  }
+
+  // --- Spraakherkenning ---
+  function createRecognition() {
+    if (!SpeechRecognition) return null
+    const r = new SpeechRecognition()
+    r.lang = 'nl-NL'
+    r.interimResults = true
+    r.continuous = true
+
+    r.onresult = (event) => {
+      let interim = ''
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const res = event.results[i]
+        if (res.isFinal) {
+          finalTranscript += res[0].transcript + ' '
+        } else {
+          interim += res[0].transcript
+        }
+      }
+      const display = (finalTranscript + interim).trim()
+      textEl.textContent = display
+      if (display) {
+        errorEl.textContent = ''
+        sendBtn.disabled = false
+      }
+    }
+
+    r.onerror = (event) => {
+      if (event.error === 'not-allowed') {
+        errorEl.textContent = 'Microfoontoegang geweigerd. Sta toe in browser-instellingen.'
+        stopListening()
+      }
+    }
+
+    r.onend = () => {
+      recognition = null
+    }
+
+    return r
+  }
+
+  // Keepalive — zelfde patroon als dashboard, maar voor mobiel.
+  let keepalive = null
+  function startListening() {
+    if (!SpeechRecognition) {
+      errorEl.textContent = 'Spraakherkenning niet ondersteund in deze browser.'
+      return
+    }
+    finalTranscript = ''
+    textEl.textContent = ''
+    errorEl.textContent = ''
+    sendBtn.disabled = true
+    listening = true
+    mic.classList.add('listening')
+
+    recognition = createRecognition()
+    if (recognition) {
+      try { recognition.start() } catch (_) { stopListening(); return }
+    }
+
+    keepalive = setInterval(() => {
+      if (!listening) {
+        clearInterval(keepalive)
+        keepalive = null
+        return
+      }
+      if (!recognition) {
+        recognition = createRecognition()
+        if (recognition) {
+          try { recognition.start() } catch (_) { recognition = null }
+        }
+      }
+    }, 500)
+  }
+
+  function stopListening() {
+    listening = false
+    mic.classList.remove('listening')
+    if (keepalive) { clearInterval(keepalive); keepalive = null }
+    if (recognition) {
+      try { recognition.stop() } catch (_) {}
+      recognition = null
+    }
+    if (textEl.textContent.trim()) {
+      sendBtn.disabled = false
+    }
+  }
+
+  mic.addEventListener('click', () => {
+    if (listening) {
+      stopListening()
+    } else {
+      startListening()
+    }
+  })
+
+  // --- Versturen ---
+  sendBtn.addEventListener('click', async () => {
+    const text = textEl.textContent.trim()
+    if (!text) return
+    sendBtn.disabled = true
+    sendBtn.textContent = 'Bezig…'
+    try {
+      await fetch('/api/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, theme: themeEl.value }),
+      })
+      // Succes-animatie.
+      const done = document.createElement('div')
+      done.className = 'done'
+      done.textContent = '✓ Toegevoegd'
+      document.body.appendChild(done)
+      setTimeout(() => {
+        done.remove()
+        textEl.textContent = ''
+        sendBtn.textContent = 'Voeg toe'
+        sendBtn.disabled = true
+        finalTranscript = ''
+      }, 1800)
+    } catch (e) {
+      errorEl.textContent = 'Versturen mislukt. Check of de API draait.'
+      sendBtn.textContent = 'Voeg toe'
+      sendBtn.disabled = false
+    }
+  })
+
+  // --- Init ---
+  loadConfig()
+</script>
+</body>
+</html>
