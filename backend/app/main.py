@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import agenda, db, parser, vault
-from .briefing import build_briefing
+from .briefing import build_briefing, invalidate_briefing_cache_for_today
 from .config import Settings, get_settings
 from .llm import LLMClient
 
@@ -132,6 +132,9 @@ def api_log(body: LogIn) -> dict:
     conn = _conn()
     written = Path(result["path"])
     parser.reindex_file(conn, s.vault_path, written)
+
+    # Briefing-cache voor vandaag invalideren — logs zijn veranderd.
+    invalidate_briefing_cache_for_today(conn, s)
 
     return {
         "ok": True,
