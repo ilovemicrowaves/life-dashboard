@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte'
   import { api } from './lib/api.js'
   import Agenda from './lib/Agenda.svelte'
+  import CreateEvent from './lib/CreateEvent.svelte'
   import LogField from './lib/LogField.svelte'
   import RecentLogs from './lib/RecentLogs.svelte'
   import SpeakQR from './lib/SpeakQR.svelte'
@@ -74,6 +75,9 @@
 
   <main class="grid">
     <section class="col agenda-col">
+      {#if config}
+        <CreateEvent on:created={loadAll} />
+      {/if}
       {#if agenda}
         <Agenda {agenda} />
       {:else if !error}

@@ -42,6 +42,15 @@ class Settings(BaseSettings):
     openrouter_referer: str = "http://localhost"
     openrouter_title: str = "Life Dashboard"
 
+    # --- Google Calendar API (events aanmaken, tweeweg-sync) ---
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_refresh_token: str = ""
+
+    @property
+    def google_configured(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret and self.google_refresh_token)
+
     # --- Server / UI ---
     port: int = 8765
     reload_interval_hours: float = 3.0

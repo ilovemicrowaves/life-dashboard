@@ -15,13 +15,14 @@ import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import agenda, db, parser, vault
+from . import agenda, db, google_calendar, parser, vault
 from .briefing import build_briefing, invalidate_briefing_cache_for_today
 from .config import Settings, get_settings
 from .llm import LLMClient
@@ -70,6 +71,15 @@ class LogIn(BaseModel):
     theme: str | None = None
 
 
+class EventIn(BaseModel):
+    summary: str = Field(min_length=1, max_length=500)
+    start: str = Field(min_length=1, max_length=25)  # ISO 8601
+    end: str = Field(min_length=1, max_length=25)
+    description: str | None = None
+    location: str | None = None
+    all_day: bool = False
+
+
 async def _auto_rebuild_loop(settings: Settings) -> None:
     """Poll met vaste interval; rebuild alleen als er een verandering in de vault is."""
     while True:
@@ -116,6 +126,48 @@ async def api_agenda_briefing(event_id: str, refresh: bool = False) -> dict:
     if event is None:
         raise HTTPException(status_code=404, detail="Event niet gevonden")
     return await build_briefing(conn, get_settings(), _llm, event, refresh=refresh)
+
+
+@app.get("/api/auth/google/status")
+def api_google_status() -> dict:
+    return {"configured": get_settings().google_configured}
+
+
+@app.post("/api/calendar/events")
+async def api_create_event(body: EventIn) -> dict:
+    s = get_settings()
+    if not s.google_configured:
+        raise HTTPException(
+            status_code=400,
+            detail="Google Calendar is niet gekoppeld. "
+            "Zet GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET en GOOGLE_REFRESH_TOKEN in .env.",
+        )
+    try:
+        result = await asyncio.to_thread(
+            google_calendar.create_event,
+            s,
+            body.summary,
+            body.start,
+            body.end,
+            description=body.description,
+            location=body.location,
+            all_day=body.all_day,
+        )
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Google Calendar API-fout: {exc.response.status_code}",
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    # Rebuild de index zodat het nieuwe event in de agenda verschijnt.
+    try:
+        parser.rebuild(_conn(), s)
+    except Exception:
+        pass  # Niet-fataal — het event is aangemaakt, alleen de index mist 'm nog.
+
+    return {"ok": True, "event": result}
 
 
 @app.post("/api/log")

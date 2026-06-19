@@ -26,4 +26,6 @@ export const api = {
   recent: () => get('/logs/recent'),
   log: (text, theme) => post('/log', { text, theme }),
   rebuild: () => post('/index/rebuild'),
+  googleStatus: () => get('/auth/google/status'),
+  createEvent: (data) => post('/calendar/events', data),
 }
