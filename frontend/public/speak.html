@@ -14,8 +14,6 @@
       font-family: system-ui, -apple-system, sans-serif;
       -webkit-font-smoothing: antialiased;
       touch-action: manipulation;
-      user-select: none;
-      -webkit-user-select: none;
     }
 
     body {
@@ -26,6 +24,19 @@
       padding: 20px;
       gap: 24px;
     }
+
+    .banner {
+      background: rgba(255,180,84,0.1);
+      border: 1px solid rgba(255,180,84,0.3);
+      border-radius: 12px;
+      padding: 12px 16px;
+      font-size: 0.9rem;
+      color: #ffb454;
+      text-align: center;
+      max-width: 360px;
+      line-height: 1.4;
+    }
+    .banner a { color: #5ad1c9; }
 
     .mic {
       width: min(180px, 40vw);
@@ -56,28 +67,45 @@
       50%      { box-shadow: 0 0 0 24px rgba(255,107,107,0); }
     }
 
+    .mic.hidden { display: none; }
+
     .mic svg { width: 40%; height: 40%; }
 
     .text {
       width: 100%;
       max-width: 420px;
-      min-height: 60px;
-      padding: 14px 18px;
       background: #141414;
       border: 1px solid #2c2c2e;
       border-radius: 14px;
       font-size: 1.05rem;
       color: #f4f4f5;
-      text-align: center;
       line-height: 1.5;
       word-break: break-word;
+    }
+
+    /* Spraak-modus: readonly display. */
+    .text.display {
+      min-height: 60px;
+      padding: 14px 18px;
+      text-align: center;
       transition: border-color 0.2s;
     }
-    .text:focus { border-color: #5ad1c9; outline: none; }
-    .text:empty::before {
+    .text.display:empty::before {
       content: 'Jouw log verschijnt hier…';
       color: #9b9ba1;
     }
+
+    /* Typ-modus: textarea. */
+    .text.input {
+      min-height: 80px;
+      padding: 14px 18px;
+      text-align: left;
+      font-family: inherit;
+      resize: vertical;
+      border-radius: 14px;
+    }
+    .text.input::placeholder { color: #9b9ba1; }
+    .text.input:focus { border-color: #5ad1c9; outline: none; }
 
     .row {
       display: flex;
@@ -143,7 +171,9 @@
 </head>
 <body>
 
-  <button class="mic" id="mic" aria-label="Spreek in">
+  <div class="banner" id="banner" hidden></div>
+
+  <button class="mic hidden" id="mic" aria-label="Spreek in">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
       <path d="M19 10v2a7 7 0 01-14 0v-2"/>
@@ -152,7 +182,9 @@
     </svg>
   </button>
 
-  <div class="text" id="text" contenteditable="false"></div>
+  <!-- Spraak: readonly display. Typ-fallback: textarea. -->
+  <div class="text display" id="display"></div>
+  <textarea class="text input hidden" id="input" placeholder="Typ je log…" maxlength="2000" rows="3"></textarea>
 
   <div class="row">
     <select id="theme" aria-label="Thema"></select>
@@ -164,18 +196,69 @@
 <script>
   const $ = (s) => document.querySelector(s)
 
-  const mic = $('#mic')
-  const textEl = $('#text')
+  const banner  = $('#banner')
+  const mic     = $('#mic')
+  const display = $('#display')
+  const input   = $('#input')
   const themeEl = $('#theme')
   const sendBtn = $('#send')
   const errorEl = $('#error')
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+  const speechSupported = !!SpeechRecognition
   let recognition = null
   let listening = false
   let finalTranscript = ''
   let themes = ['algemeen']
   let defaultTheme = 'algemeen'
+  let useSpeech = false   // true = mic-modus, false = typ-modus
+
+  // --- Bepaal modus ---
+  function detectMode() {
+    // Check of we spraak kunnen gebruiken.
+    // Chrome op Android/iOS: wel. Firefox: niet. Safari: wel (webkit).
+    if (speechSupported) {
+      useSpeech = true
+      mic.classList.remove('hidden')
+      display.classList.remove('hidden')
+      input.classList.add('hidden')
+      banner.hidden = true
+    } else {
+      useSpeech = false
+      mic.classList.add('hidden')
+      display.classList.add('hidden')
+      input.classList.remove('hidden')
+      banner.hidden = false
+      banner.innerHTML =
+        'Spraakherkenning wordt niet ondersteund in deze browser. '
+        + '<b>Open in Chrome</b> voor spraakinvoer, of typ hieronder.'
+    }
+  }
+
+  function getText() {
+    return useSpeech ? display.textContent.trim() : input.value.trim()
+  }
+
+  function setText(val) {
+    if (useSpeech) {
+      display.textContent = val
+    } else {
+      input.value = val
+    }
+    if (val) {
+      errorEl.textContent = ''
+      sendBtn.disabled = false
+    } else {
+      sendBtn.disabled = true
+    }
+  }
+
+  function clearText() {
+    display.textContent = ''
+    input.value = ''
+    finalTranscript = ''
+    sendBtn.disabled = true
+  }
 
   // --- Config laden ---
   async function loadConfig() {
@@ -189,104 +272,9 @@
     } catch (_) {}
   }
 
-  // --- Spraakherkenning ---
-  function createRecognition() {
-    if (!SpeechRecognition) return null
-    const r = new SpeechRecognition()
-    r.lang = 'nl-NL'
-    r.interimResults = true
-    r.continuous = true
-
-    r.onresult = (event) => {
-      let interim = ''
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const res = event.results[i]
-        if (res.isFinal) {
-          finalTranscript += res[0].transcript + ' '
-        } else {
-          interim += res[0].transcript
-        }
-      }
-      const display = (finalTranscript + interim).trim()
-      textEl.textContent = display
-      if (display) {
-        errorEl.textContent = ''
-        sendBtn.disabled = false
-      }
-    }
-
-    r.onerror = (event) => {
-      if (event.error === 'not-allowed') {
-        errorEl.textContent = 'Microfoontoegang geweigerd. Sta toe in browser-instellingen.'
-        stopListening()
-      }
-    }
-
-    r.onend = () => {
-      recognition = null
-    }
-
-    return r
-  }
-
-  // Keepalive — zelfde patroon als dashboard, maar voor mobiel.
-  let keepalive = null
-  function startListening() {
-    if (!SpeechRecognition) {
-      errorEl.textContent = 'Spraakherkenning niet ondersteund in deze browser.'
-      return
-    }
-    finalTranscript = ''
-    textEl.textContent = ''
-    errorEl.textContent = ''
-    sendBtn.disabled = true
-    listening = true
-    mic.classList.add('listening')
-
-    recognition = createRecognition()
-    if (recognition) {
-      try { recognition.start() } catch (_) { stopListening(); return }
-    }
-
-    keepalive = setInterval(() => {
-      if (!listening) {
-        clearInterval(keepalive)
-        keepalive = null
-        return
-      }
-      if (!recognition) {
-        recognition = createRecognition()
-        if (recognition) {
-          try { recognition.start() } catch (_) { recognition = null }
-        }
-      }
-    }, 500)
-  }
-
-  function stopListening() {
-    listening = false
-    mic.classList.remove('listening')
-    if (keepalive) { clearInterval(keepalive); keepalive = null }
-    if (recognition) {
-      try { recognition.stop() } catch (_) {}
-      recognition = null
-    }
-    if (textEl.textContent.trim()) {
-      sendBtn.disabled = false
-    }
-  }
-
-  mic.addEventListener('click', () => {
-    if (listening) {
-      stopListening()
-    } else {
-      startListening()
-    }
-  })
-
   // --- Versturen ---
   sendBtn.addEventListener('click', async () => {
-    const text = textEl.textContent.trim()
+    const text = getText()
     if (!text) return
     sendBtn.disabled = true
     sendBtn.textContent = 'Bezig…'
@@ -296,17 +284,14 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, theme: themeEl.value }),
       })
-      // Succes-animatie.
       const done = document.createElement('div')
       done.className = 'done'
       done.textContent = '✓ Toegevoegd'
       document.body.appendChild(done)
       setTimeout(() => {
         done.remove()
-        textEl.textContent = ''
+        clearText()
         sendBtn.textContent = 'Voeg toe'
-        sendBtn.disabled = true
-        finalTranscript = ''
       }, 1800)
     } catch (e) {
       errorEl.textContent = 'Versturen mislukt. Check of de API draait.'
@@ -315,7 +300,83 @@
     }
   })
 
+  // Houd sendBtn in sync met typ-invoer.
+  input.addEventListener('input', () => {
+    sendBtn.disabled = !input.value.trim()
+  })
+
+  // --- Spraakherkenning (alleen als supported) ---
+  if (speechSupported) {
+    function createRecognition() {
+      const r = new SpeechRecognition()
+      r.lang = 'nl-NL'
+      r.interimResults = true
+      r.continuous = true
+
+      r.onresult = (event) => {
+        let interim = ''
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const res = event.results[i]
+          if (res.isFinal) {
+            finalTranscript += res[0].transcript + ' '
+          } else {
+            interim += res[0].transcript
+          }
+        }
+        setText((finalTranscript + interim).trim())
+      }
+
+      r.onerror = (event) => {
+        if (event.error === 'not-allowed') {
+          errorEl.textContent = 'Microfoontoegang geweigerd. Sta toe in browser-instellingen.'
+          stopListening()
+        }
+      }
+
+      r.onend = () => { recognition = null }
+      return r
+    }
+
+    let keepalive = null
+    function startListening() {
+      finalTranscript = ''
+      display.textContent = ''
+      errorEl.textContent = ''
+      sendBtn.disabled = true
+      listening = true
+      mic.classList.add('listening')
+
+      recognition = createRecognition()
+      if (recognition) {
+        try { recognition.start() } catch (_) { stopListening(); return }
+      }
+
+      keepalive = setInterval(() => {
+        if (!listening) { clearInterval(keepalive); keepalive = null; return }
+        if (!recognition) {
+          recognition = createRecognition()
+          if (recognition) {
+            try { recognition.start() } catch (_) { recognition = null }
+          }
+        }
+      }, 500)
+    }
+
+    function stopListening() {
+      listening = false
+      mic.classList.remove('listening')
+      if (keepalive) { clearInterval(keepalive); keepalive = null }
+      if (recognition) { try { recognition.stop() } catch (_) {}; recognition = null }
+      if (display.textContent.trim()) sendBtn.disabled = false
+    }
+
+    mic.addEventListener('click', () => {
+      if (listening) { stopListening() } else { startListening() }
+    })
+  }
+
   // --- Init ---
+  detectMode()
   loadConfig()
 </script>
 </body>
