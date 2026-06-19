@@ -31,11 +31,17 @@ services:
       LOG_THEMES: ${LOG_THEMES:-algemeen,werk,gezondheid,idee,relatie}
       DEFAULT_THEME: ${DEFAULT_THEME:-algemeen}
       RECENT_LOGS_COUNT: ${RECENT_LOGS_COUNT:-10}
+      # SSL (optioneel). Zet cert.pem + key.pem naast docker-compose.yml.
+      SSL_KEYFILE: ${SSL_KEYFILE:-}
+      SSL_CERTFILE: ${SSL_CERTFILE:-}
     volumes:
       # Je echte vault (read-write). Default = de meegeleverde sample-vault.
       - ${VAULT_HOST_PATH:-./sample-vault}:/vault
       # Herbouwbare index in een named volume.
       - dashboard-index:/data
+      # Self-signed certificaten (optioneel, voor HTTPS).
+      - ${SSL_CERT_FILE:-/dev/null}:/certs/cert.pem:ro
+      - ${SSL_KEY_FILE:-/dev/null}:/certs/key.pem:ro
 
 volumes:
   dashboard-index:

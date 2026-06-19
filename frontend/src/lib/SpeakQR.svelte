@@ -6,7 +6,10 @@
   let speakUrl = ''
 
   onMount(async () => {
-    speakUrl = window.location.origin + '/speak.html'
+    // Localhost mag HTTP, al het andere (NAS, LAN) forceert HTTPS voor microfoon.
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    const proto = isLocal ? window.location.protocol : 'https:'
+    speakUrl = proto + '//' + window.location.host + '/speak.html'
     try {
       qrDataUrl = await QRCode.toDataURL(speakUrl, {
         width: 160,

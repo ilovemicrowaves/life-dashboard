@@ -22,4 +22,7 @@ COPY backend/app ./app
 COPY --from=frontend /fe/dist ./static
 
 EXPOSE 8765
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8765"]
+# SSL is optioneel: zet SSL_KEYFILE en SSL_CERTFILE in de omgeving om HTTPS te gebruiken.
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8765} \
+    ${SSL_KEYFILE:+--ssl-keyfile $SSL_KEYFILE} \
+    ${SSL_CERTFILE:+--ssl-certfile $SSL_CERTFILE}
