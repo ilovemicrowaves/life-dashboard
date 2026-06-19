@@ -1,0 +1,40 @@
+# Life Dashboard — draait naast je bestaande stack op de NAS.
+# Eén service: FastAPI serveert de API én de gebouwde frontend.
+#
+# Zet de host-paden en je sleutel in een .env naast dit bestand, of vul ze hier in.
+#   VAULT_HOST_PATH = absoluut pad naar je markdown-vault op de NAS (read-write,
+#                     want de ene schrijfactie is de logregel-append).
+#   HOST_PORT       = poort op de NAS (open in de browser: http://nas:HOST_PORT).
+
+services:
+  dashboard:
+    build: .
+    image: life-dashboard:0.1.0
+    container_name: life-dashboard
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8765}:8765"
+    environment:
+      # Binnen de container vaste paden; de vault wordt op /vault gemount.
+      VAULT_PATH: /vault
+      DAILY_SUBDIR: ${DAILY_SUBDIR:-Daily}
+      ICS_FILE: ${ICS_FILE:-/vault/Calendar/life.ics}
+      ICS_URL: ${ICS_URL:-}
+      # Index staat BUITEN de vault, in een eigen volume — wegwerpbare cache.
+      INDEX_DB: /data/index.db
+      AUTO_REBUILD_ON_START: "true"
+      DASHBOARD_TZ: ${DASHBOARD_TZ:-Europe/Amsterdam}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-anthropic/claude-3.5-haiku}
+      RELOAD_INTERVAL_HOURS: ${RELOAD_INTERVAL_HOURS:-3}
+      LOG_THEMES: ${LOG_THEMES:-algemeen,werk,gezondheid,idee,relatie}
+      DEFAULT_THEME: ${DEFAULT_THEME:-algemeen}
+      RECENT_LOGS_COUNT: ${RECENT_LOGS_COUNT:-10}
+    volumes:
+      # Je echte vault (read-write). Default = de meegeleverde sample-vault.
+      - ${VAULT_HOST_PATH:-./sample-vault}:/vault
+      # Herbouwbare index in een named volume.
+      - dashboard-index:/data
+
+volumes:
+  dashboard-index:

@@ -1,0 +1,4 @@
+# Forceer LF bij checkout — dit project draait op Linux (NAS/Docker).
+# Voorkomt kapotte shell-scripts (CRLF) wanneer je vanaf Windows pusht.
+* text=auto eol=lf
+*.sh text eol=lf

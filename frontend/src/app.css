@@ -1,0 +1,74 @@
+/* ------------------------------------------------------------------
+   Life Dashboard — globale stijl
+   Doelscherm: 42" LG OLED via WebOS-browser (Chromium ~87), bediend met
+   Magic Remote (pointer). Werkt ook op Mac en telefoon.
+   - Puur zwart als achtergrond (mooi + zuinig op OLED).
+   - Grote letters en grote tap-targets.
+   - Alleen Grid/Flexbox/CSS-variabelen. Geen :has(), container queries, subgrid.
+   ------------------------------------------------------------------ */
+
+:root {
+  --bg: #000000;
+  --surface: #141414;
+  --surface-2: #1d1d1f;
+  --border: #2c2c2e;
+  --text: #f4f4f5;
+  --muted: #9b9ba1;
+  --accent: #5ad1c9;
+  --accent-strong: #2fb3aa;
+  --amber: #ffb454;
+  --danger: #ff6b6b;
+
+  --radius: 16px;
+  --gap: 20px;
+  --tap-min: 56px;
+
+  /* Themakleuren voor de log-chips (subtiel). */
+  --t-algemeen: #8e8e93;
+  --t-werk: #6aa9ff;
+  --t-gezondheid: #5fd17a;
+  --t-idee: #ffb454;
+  --t-relatie: #ff8ac2;
+
+  font-size: 20px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+h1, h2, h3 { margin: 0; font-weight: 700; }
+
+/* Grote, duidelijke focus-ring voor pointer/toetsenbord. */
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.muted { color: var(--muted); }
+
+/* Grotere basis op echt grote schermen (de TV). */
+@media (min-width: 1600px) {
+  :root { font-size: 24px; }
+}
