@@ -172,3 +172,66 @@ def test_today_contains_seeded_event(tmp_path):
     data = get_today_and_week(conn, s)
     summaries = [e["summary"] for e in data["today"]["events"]]
     assert "Testafspraak" in summaries
+
+
+# --------------------------------------------------------------------------
+# Auto-rebuild: change detection
+# --------------------------------------------------------------------------
+
+def test_vault_files_changed_true_when_no_rebuild(tmp_path):
+    """Zonder last_rebuild is alles 'veranderd'."""
+    s = _settings(tmp_path)
+    conn = db.get_conn(s.index_db)
+    db.init_schema(conn)
+    # Geen rebuild gedaan, dus geen last_rebuild meta.
+    assert parser.vault_files_changed(s) is True
+
+
+def test_vault_files_changed_false_when_nothing_changed(tmp_path):
+    """Na een rebuild is er niets veranderd — mits er geen ICS_URL is."""
+    s = _seed_vault(tmp_path)
+    conn = db.get_conn(s.index_db)
+    db.init_schema(conn)
+    parser.rebuild(conn, s)
+    assert parser.vault_files_changed(s) is False
+
+
+def test_vault_files_changed_true_when_md_modified(tmp_path):
+    """Een gewijzigd .md-bestand wordt gedetecteerd."""
+    import time as _time
+
+    s = _seed_vault(tmp_path)
+    conn = db.get_conn(s.index_db)
+    db.init_schema(conn)
+    parser.rebuild(conn, s)
+
+    # Kleine pauze zodat de mtime gegarandeerd > last_rebuild is.
+    _time.sleep(0.02)
+
+    # Wijzig een bestaand .md-bestand.
+    md = s.daily_dir / "2026-06-18.md"
+    md.write_text("# 2026-06-18\n\n- nieuwe regel #log/werk\n", encoding="utf-8")
+
+    assert parser.vault_files_changed(s) is True
+
+
+def test_vault_files_changed_true_with_ics_url(tmp_path):
+    """ICS-URL is altijd 'mogelijk veranderd'."""
+    s = _seed_vault(tmp_path)
+    conn = db.get_conn(s.index_db)
+    db.init_schema(conn)
+    parser.rebuild(conn, s)
+
+    s.ics_url = "https://example.com/calendar.ics"
+    assert parser.vault_files_changed(s) is True
+
+
+def test_vault_files_changed_false_without_ics_url(tmp_path):
+    """Zonder ICS-URL en zonder wijzigingen is er niets veranderd."""
+    s = _seed_vault(tmp_path)
+    conn = db.get_conn(s.index_db)
+    db.init_schema(conn)
+    parser.rebuild(conn, s)
+
+    s.ics_url = ""
+    assert parser.vault_files_changed(s) is False

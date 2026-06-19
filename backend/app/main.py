@@ -11,6 +11,7 @@ Endpoints (onder /api):
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -22,7 +23,7 @@ from pydantic import BaseModel, Field
 
 from . import agenda, db, parser, vault
 from .briefing import build_briefing
-from .config import get_settings
+from .config import Settings, get_settings
 from .llm import LLMClient
 
 
@@ -34,7 +35,21 @@ async def lifespan(app: FastAPI):
     if settings.auto_rebuild_on_start and db.is_empty(conn):
         counts = parser.rebuild(conn, settings)
         print(f"[startup] index opgebouwd: {counts}")
+
+    # Start de auto-rebuild poll-loop als die aan staat.
+    poll_task: asyncio.Task | None = None
+    if settings.auto_rebuild_poll_seconds > 0:
+        poll_task = asyncio.create_task(_auto_rebuild_loop(settings))
+        print(f"[startup] auto-rebuild poll elke {settings.auto_rebuild_poll_seconds}s")
+
     yield
+
+    if poll_task:
+        poll_task.cancel()
+        try:
+            await poll_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="Life Dashboard", version="0.1.0", lifespan=lifespan)
@@ -53,6 +68,19 @@ _llm = LLMClient(_settings)
 class LogIn(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
     theme: str | None = None
+
+
+async def _auto_rebuild_loop(settings: Settings) -> None:
+    """Poll met vaste interval; rebuild alleen als er een verandering in de vault is."""
+    while True:
+        await asyncio.sleep(settings.auto_rebuild_poll_seconds)
+        try:
+            if parser.vault_files_changed(settings):
+                # Rebuild in een thread — SQLite is blocking.
+                counts = await asyncio.to_thread(parser.rebuild, _conn(), settings)
+                print(f"[auto-rebuild] verandering gedetecteerd, index herbouwd: {counts}")
+        except Exception as exc:
+            print(f"[auto-rebuild] fout: {exc}")
 
 
 def _conn():

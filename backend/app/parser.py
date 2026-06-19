@@ -230,5 +230,51 @@ def rebuild(conn: sqlite3.Connection, settings: Settings) -> dict:
         db.drop_all(conn)
         n_logs = collect_logs(conn, settings)
         n_events = collect_events(conn, settings)
-        db.set_meta(conn, "last_rebuild", now_local(settings.dashboard_tz).isoformat(timespec="seconds"))
+        db.set_meta(conn, "last_rebuild", now_local(settings.dashboard_tz).isoformat(timespec="microseconds"))
     return {"logs": n_logs, "events": n_events}
+
+
+def vault_files_changed(settings: Settings) -> bool:
+    """Scan de vault op .md- en .ics-bestanden die nieuwer zijn dan de laatste rebuild.
+    ICS-URL telt altijd als 'mogelijk veranderd' — die checken we niet met HEAD."""
+    conn = db.get_conn(settings.index_db)
+    last_str = db.get_meta(conn, "last_rebuild")
+    last_dt: datetime | None = None
+    if last_str:
+        try:
+            last_dt = datetime.fromisoformat(last_str)
+        except ValueError:
+            pass
+
+    # Als er nog nooit gerebuild is, is alles 'veranderd'.
+    if last_dt is None:
+        return True
+
+    tz = ZoneInfo(settings.dashboard_tz)
+
+    # Markdown-bestanden in de vault.
+    for p in iter_markdown_files(settings.vault_path):
+        try:
+            mtime = datetime.fromtimestamp(p.stat().st_mtime, tz=tz)
+            if mtime > last_dt:
+                return True
+        except OSError:
+            continue
+
+    # Lokaal ICS-bestand (of map).
+    ics_file = settings.ics_file.strip()
+    if ics_file:
+        p = Path(ics_file)
+        candidates = sorted(p.glob("*.ics")) if p.is_dir() else ([p] if p.is_file() else [])
+        for f in candidates:
+            try:
+                if datetime.fromtimestamp(f.stat().st_mtime, tz=tz) > last_dt:
+                    return True
+            except OSError:
+                continue
+
+    # ICS-URL: we kunnen niet goedkoop checken of die veranderd is.
+    if settings.ics_url.strip():
+        return True
+
+    return False

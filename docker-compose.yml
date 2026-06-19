@@ -23,6 +23,7 @@ services:
       # Index staat BUITEN de vault, in een eigen volume — wegwerpbare cache.
       INDEX_DB: /data/index.db
       AUTO_REBUILD_ON_START: "true"
+      AUTO_REBUILD_POLL_SECONDS: ${AUTO_REBUILD_POLL_SECONDS:-300}
       DASHBOARD_TZ: ${DASHBOARD_TZ:-Europe/Amsterdam}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-anthropic/claude-3.5-haiku}

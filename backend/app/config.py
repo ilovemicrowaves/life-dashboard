@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     # --- Index (herbouwbare cache, NIET de bron) ---
     index_db: Path = Path("./data/index.db")
     auto_rebuild_on_start: bool = True
+    auto_rebuild_poll_seconds: int = 300  # 0 = uit, >0 = poll-interval in seconden
 
     # --- Locale / tijd ---
     dashboard_tz: str = "Europe/Amsterdam"
