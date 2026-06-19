@@ -6,6 +6,7 @@
 
   const dispatch = createEventDispatcher()
 
+  // --- Log invoer ---
   let text = ''
   let theme = config.defaultTheme || (config.themes && config.themes[0]) || 'algemeen'
   let sending = false
@@ -36,20 +37,138 @@
       submit()
     }
   }
+
+  // --- Spraakherkenning ---
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+  let recognition = null
+  let listening = false
+  let speechSupported = !!SpeechRecognition
+  let speechError = ''
+
+  function initRecognition() {
+    if (!SpeechRecognition) return
+    const r = new SpeechRecognition()
+    r.lang = 'nl-NL'
+    r.interimResults = true
+    r.continuous = false
+
+    r.onresult = (event) => {
+      // Bouw transcript op uit alle resultaten van deze sessie.
+      let interim = ''
+      let final = ''
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i]
+        if (result.isFinal) {
+          final += result[0].transcript
+        } else {
+          interim += result[0].transcript
+        }
+      }
+      // Toon het gecombineerde resultaat in het invoerveld.
+      text = ((final || interim) || '').trim()
+    }
+
+    r.onerror = (event) => {
+      listening = false
+      if (event.error === 'not-allowed') {
+        speechError = 'Microfoon niet toegestaan. Controleer browser-rechten.'
+      } else if (event.error === 'no-speech') {
+        speechError = 'Geen spraak gedetecteerd. Probeer opnieuw.'
+      } else if (event.error === 'audio-capture') {
+        speechError = 'Geen microfoon gevonden.'
+      } else if (event.error === 'network') {
+        speechError = 'Netwerkfout bij spraakherkenning.'
+      } else if (event.error === 'aborted') {
+        // Normaal — gebruiker stopte of timeout.
+        speechError = ''
+      } else {
+        speechError = `Spraakfout: ${event.error}`
+      }
+      recognition = null
+    }
+
+    r.onend = () => {
+      listening = false
+      recognition = null
+      // Als er tekst is ingesproken: focus op 'Voeg toe' zodat de gebruiker
+      // met één Enter/klik kan versturen.
+      if (text.trim()) {
+        // Kleine timeout zodat de laatste interim-resultaten verwerkt zijn.
+      }
+    }
+
+    return r
+  }
+
+  function toggleSpeech() {
+    if (listening) {
+      // Stop actieve herkenning.
+      if (recognition) {
+        recognition.abort()
+        recognition = null
+      }
+      listening = false
+      return
+    }
+
+    speechError = ''
+    recognition = initRecognition()
+    if (!recognition) return
+
+    try {
+      recognition.start()
+      listening = true
+    } catch (e) {
+      speechError = 'Kon spraakherkenning niet starten.'
+      listening = false
+      recognition = null
+    }
+  }
 </script>
 
 <section class="logfield">
   <h2 class="title">Log</h2>
 
-  <input
-    class="input"
-    type="text"
-    bind:value={text}
-    on:keydown={onKeydown}
-    placeholder={config.logPlaceholder}
-    aria-label="Logregel"
-    maxlength="2000"
-  />
+  <div class="input-row">
+    <input
+      class="input"
+      type="text"
+      bind:value={text}
+      on:keydown={onKeydown}
+      placeholder={listening ? '● Luistert… spreek nu' : config.logPlaceholder}
+      aria-label="Logregel"
+      maxlength="2000"
+    />
+
+    {#if speechSupported}
+      <button
+        class="mic"
+        class:listening
+        on:click={toggleSpeech}
+        aria-label={listening ? 'Stop spraakherkenning' : 'Spreek je log in'}
+        title={listening ? 'Stop' : 'Spreek in'}
+      >
+        {#if listening}
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="8" y="1" width="4" height="12" rx="2" fill="currentColor" />
+            <path d="M12 17v4M8 21h8" />
+            <circle cx="12" cy="12" r="3" fill="none" />
+          </svg>
+        {:else}
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+            <line x1="12" y1="19" x2="12" y2="23" />
+            <line x1="8" y1="23" x2="16" y2="23" />
+          </svg>
+        {/if}
+      </button>
+    {/if}
+  </div>
+
+  {#if speechError}
+    <div class="speech-error" role="alert">{speechError}</div>
+  {/if}
 
   <div class="row">
     <label class="theme">
@@ -83,17 +202,64 @@
   }
   .title { font-size: 1.3rem; }
 
+  .input-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
   .input {
-    width: 100%;
+    flex: 1;
     min-height: var(--tap-min);
     padding: 14px 18px;
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 12px;
     font-size: 1.15rem;
+    transition: border-color 0.2s;
   }
   .input::placeholder { color: var(--muted); }
   .input:focus { border-color: var(--accent); outline: none; }
+
+  /* --- Mic-knop --- */
+  .mic {
+    flex-shrink: 0;
+    width: var(--tap-min);
+    height: var(--tap-min);
+    border-radius: 50%;
+    background: var(--bg);
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    transition: all 0.2s ease;
+  }
+  .mic:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .mic:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* Luister-status: pulserende rode ring. */
+  .mic.listening {
+    border-color: var(--danger);
+    color: var(--danger);
+    animation: mic-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes mic-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.5); }
+    50%      { box-shadow: 0 0 0 12px rgba(255, 107, 107, 0); }
+  }
+
+  .speech-error {
+    color: var(--amber);
+    font-size: 0.9rem;
+    padding: 0 4px;
+  }
 
   .row {
     display: flex;
