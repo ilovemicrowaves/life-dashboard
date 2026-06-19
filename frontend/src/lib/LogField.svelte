@@ -44,28 +44,27 @@
   let listening = false
   let speechSupported = !!SpeechRecognition
   let speechError = ''
+  let finalTranscript = ''  // accumulatie over meerdere utterances
 
   function initRecognition() {
     if (!SpeechRecognition) return
     const r = new SpeechRecognition()
     r.lang = 'nl-NL'
     r.interimResults = true
-    r.continuous = false
+    r.continuous = true   // blijft luisteren tot gebruiker stopt — ook bij 5+s stilte
 
     r.onresult = (event) => {
-      // Bouw transcript op uit alle resultaten van deze sessie.
       let interim = ''
-      let final = ''
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i]
         if (result.isFinal) {
-          final += result[0].transcript
+          finalTranscript += result[0].transcript + ' '
         } else {
           interim += result[0].transcript
         }
       }
-      // Toon het gecombineerde resultaat in het invoerveld.
-      text = ((final || interim) || '').trim()
+      // Toon accumulatie + live interim.
+      text = (finalTranscript + interim).trim()
     }
 
     r.onerror = (event) => {
@@ -73,28 +72,28 @@
       if (event.error === 'not-allowed') {
         speechError = 'Microfoon niet toegestaan. Controleer browser-rechten.'
       } else if (event.error === 'no-speech') {
-        speechError = 'Geen spraak gedetecteerd. Probeer opnieuw.'
+        // Niet meteen als fout tonen — wacht op volgende poging.
+        if (!finalTranscript.trim()) {
+          speechError = 'Geen spraak gedetecteerd. Blijf praten, of klik om te stoppen.'
+        }
       } else if (event.error === 'audio-capture') {
         speechError = 'Geen microfoon gevonden.'
       } else if (event.error === 'network') {
         speechError = 'Netwerkfout bij spraakherkenning.'
       } else if (event.error === 'aborted') {
-        // Normaal — gebruiker stopte of timeout.
+        // Normaal — gebruiker stopte zelf.
         speechError = ''
       } else {
         speechError = `Spraakfout: ${event.error}`
       }
-      recognition = null
+      if (event.error !== 'no-speech') {
+        recognition = null
+      }
     }
 
     r.onend = () => {
       listening = false
       recognition = null
-      // Als er tekst is ingesproken: focus op 'Voeg toe' zodat de gebruiker
-      // met één Enter/klik kan versturen.
-      if (text.trim()) {
-        // Kleine timeout zodat de laatste interim-resultaten verwerkt zijn.
-      }
     }
 
     return r
@@ -102,9 +101,9 @@
 
   function toggleSpeech() {
     if (listening) {
-      // Stop actieve herkenning.
+      // Stop actieve herkenning. Laat opgebouwde tekst staan.
       if (recognition) {
-        recognition.abort()
+        recognition.stop()
         recognition = null
       }
       listening = false
@@ -112,6 +111,7 @@
     }
 
     speechError = ''
+    finalTranscript = ''
     recognition = initRecognition()
     if (!recognition) return
 
