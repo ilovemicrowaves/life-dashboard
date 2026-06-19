@@ -45,13 +45,16 @@
   let speechSupported = !!SpeechRecognition
   let speechError = ''
   let finalTranscript = ''  // accumulatie over meerdere utterances
+  let userStopped = false   // true = gebruiker klikte zelf op stop
 
-  function initRecognition() {
-    if (!SpeechRecognition) return
+  function createRecognition() {
+    if (!SpeechRecognition) return null
     const r = new SpeechRecognition()
     r.lang = 'nl-NL'
     r.interimResults = true
-    r.continuous = true   // blijft luisteren tot gebruiker stopt — ook bij 5+s stilte
+    // continuous:true vragen we aan, maar WebOS negeert het soms.
+    // Daarom vangen we onend op en herstarten we zelf (zie onder).
+    r.continuous = true
 
     r.onresult = (event) => {
       let interim = ''
@@ -63,37 +66,63 @@
           interim += result[0].transcript
         }
       }
-      // Toon accumulatie + live interim.
       text = (finalTranscript + interim).trim()
+      // Zodra we spraak krijgen: wis eventuele eerdere foutmelding.
+      if (text) speechError = ''
     }
 
     r.onerror = (event) => {
-      listening = false
+      // 'no-speech' en 'aborted' zijn normaal bij stilte of herstart —
+      // laat onend de herstart regelen.
       if (event.error === 'not-allowed') {
         speechError = 'Microfoon niet toegestaan. Controleer browser-rechten.'
-      } else if (event.error === 'no-speech') {
-        // Niet meteen als fout tonen — wacht op volgende poging.
-        if (!finalTranscript.trim()) {
-          speechError = 'Geen spraak gedetecteerd. Blijf praten, of klik om te stoppen.'
-        }
+        userStopped = true  // niet herstarten
+        listening = false
       } else if (event.error === 'audio-capture') {
         speechError = 'Geen microfoon gevonden.'
+        userStopped = true
+        listening = false
       } else if (event.error === 'network') {
-        speechError = 'Netwerkfout bij spraakherkenning.'
-      } else if (event.error === 'aborted') {
-        // Normaal — gebruiker stopte zelf.
-        speechError = ''
-      } else {
-        speechError = `Spraakfout: ${event.error}`
+        speechError = 'Netwerkfout bij spraakherkenning. Herstart…'
+        // Niet userStopped=true — laat onend herstarten.
       }
-      if (event.error !== 'no-speech') {
-        recognition = null
-      }
+      // no-speech / aborted: geen foutmelding, onend herstart vanzelf.
     }
 
     r.onend = () => {
-      listening = false
+      // Als de gebruiker nog aan het luisteren is én niet zelf gestopt:
+      // WebOS kapte ons af (stilte, timeout). Direct herstarten.
+      if (listening && !userStopped) {
+        setTimeout(() => {
+          if (listening && !userStopped) {
+            try {
+              const next = createRecognition()
+              if (next) {
+                next.start()
+                recognition = next
+              }
+            } catch (_) {
+              // Kon niet herstarten — nog een poging.
+              setTimeout(() => {
+                if (listening && !userStopped) {
+                  try {
+                    const next2 = createRecognition()
+                    if (next2) { next2.start(); recognition = next2 }
+                  } catch (__) {
+                    speechError = 'Herstart spraak mislukt. Klik opnieuw.'
+                    listening = false
+                    recognition = null
+                  }
+                }
+              }, 800)
+            }
+          }
+        }, 200)
+        return
+      }
+      // Gebruiker stopte zelf, of luistermodus is uit.
       recognition = null
+      userStopped = false
     }
 
     return r
@@ -101,7 +130,8 @@
 
   function toggleSpeech() {
     if (listening) {
-      // Stop actieve herkenning. Laat opgebouwde tekst staan.
+      // Expliciet stoppen.
+      userStopped = true
       if (recognition) {
         recognition.stop()
         recognition = null
@@ -110,10 +140,15 @@
       return
     }
 
+    // Starten.
     speechError = ''
     finalTranscript = ''
-    recognition = initRecognition()
-    if (!recognition) return
+    userStopped = false
+    recognition = createRecognition()
+    if (!recognition) {
+      speechError = 'Spraakherkenning niet ondersteund in deze browser.'
+      return
+    }
 
     try {
       recognition.start()
