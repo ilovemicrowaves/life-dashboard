@@ -45,15 +45,13 @@
   let speechSupported = !!SpeechRecognition
   let speechError = ''
   let finalTranscript = ''  // accumulatie over meerdere utterances
-  let userStopped = false   // true = gebruiker klikte zelf op stop
+  let keepalive = null     // setInterval-id voor herstart-polling
 
-  function createRecognition() {
+  function makeRecognition() {
     if (!SpeechRecognition) return null
     const r = new SpeechRecognition()
     r.lang = 'nl-NL'
     r.interimResults = true
-    // continuous:true vragen we aan, maar WebOS negeert het soms.
-    // Daarom vangen we onend op en herstarten we zelf (zie onder).
     r.continuous = true
 
     r.onresult = (event) => {
@@ -67,97 +65,82 @@
         }
       }
       text = (finalTranscript + interim).trim()
-      // Zodra we spraak krijgen: wis eventuele eerdere foutmelding.
       if (text) speechError = ''
     }
 
     r.onerror = (event) => {
-      // 'no-speech' en 'aborted' zijn normaal bij stilte of herstart —
-      // laat onend de herstart regelen.
       if (event.error === 'not-allowed') {
-        speechError = 'Microfoon niet toegestaan. Controleer browser-rechten.'
-        userStopped = true  // niet herstarten
-        listening = false
+        speechError = 'Microfoon niet toegestaan.'
+        stopSpeech()
       } else if (event.error === 'audio-capture') {
         speechError = 'Geen microfoon gevonden.'
-        userStopped = true
-        listening = false
-      } else if (event.error === 'network') {
-        speechError = 'Netwerkfout bij spraakherkenning. Herstart…'
-        // Niet userStopped=true — laat onend herstarten.
+        stopSpeech()
       }
-      // no-speech / aborted: geen foutmelding, onend herstart vanzelf.
+      // no-speech, aborted, network: we laten de keepalive herstarten.
     }
 
     r.onend = () => {
-      // Als de gebruiker nog aan het luisteren is én niet zelf gestopt:
-      // WebOS kapte ons af (stilte, timeout). Direct herstarten.
-      if (listening && !userStopped) {
-        setTimeout(() => {
-          if (listening && !userStopped) {
-            try {
-              const next = createRecognition()
-              if (next) {
-                next.start()
-                recognition = next
-              }
-            } catch (_) {
-              // Kon niet herstarten — nog een poging.
-              setTimeout(() => {
-                if (listening && !userStopped) {
-                  try {
-                    const next2 = createRecognition()
-                    if (next2) { next2.start(); recognition = next2 }
-                  } catch (__) {
-                    speechError = 'Herstart spraak mislukt. Klik opnieuw.'
-                    listening = false
-                    recognition = null
-                  }
-                }
-              }, 800)
-            }
-          }
-        }, 200)
-        return
-      }
-      // Gebruiker stopte zelf, of luistermodus is uit.
+      // Browser beëindigde de sessie. We zetten recognition op null;
+      // de keepalive start binnen 500ms een nieuwe — tenzij gebruiker stopte.
       recognition = null
-      userStopped = false
     }
 
     return r
   }
 
-  function toggleSpeech() {
-    if (listening) {
-      // Expliciet stoppen.
-      userStopped = true
-      if (recognition) {
-        recognition.stop()
-        recognition = null
-      }
-      listening = false
-      return
-    }
-
-    // Starten.
+  function startSpeech() {
     speechError = ''
     finalTranscript = ''
-    userStopped = false
-    recognition = createRecognition()
+    recognition = makeRecognition()
     if (!recognition) {
-      speechError = 'Spraakherkenning niet ondersteund in deze browser.'
+      speechError = 'Spraakherkenning niet ondersteund.'
       return
     }
-
     try {
       recognition.start()
       listening = true
     } catch (e) {
       speechError = 'Kon spraakherkenning niet starten.'
-      listening = false
+      recognition = null
+      return
+    }
+
+    // Keepalive: elke 500ms checken of recognition nog leeft.
+    // Zo niet (null = browser kapte af) → meteen herstarten.
+    keepalive = setInterval(() => {
+      if (!listening) {
+        clearInterval(keepalive)
+        keepalive = null
+        return
+      }
+      if (!recognition) {
+        // Browser heeft de sessie beëindigd. Herstart.
+        recognition = makeRecognition()
+        if (recognition) {
+          try { recognition.start() } catch (_) { recognition = null }
+        }
+      }
+    }, 500)
+  }
+
+  function stopSpeech() {
+    listening = false
+    if (keepalive) {
+      clearInterval(keepalive)
+      keepalive = null
+    }
+    if (recognition) {
+      try { recognition.stop() } catch (_) {}
       recognition = null
     }
+  }
+
+  function toggleSpeech() {
+    if (listening) {
+      stopSpeech()
+      return
+    }
+    startSpeech()
   }
 </script>
 
